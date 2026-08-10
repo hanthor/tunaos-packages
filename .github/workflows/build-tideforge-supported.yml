@@ -224,6 +224,14 @@ jobs:
             target: el10
           - package: evtest
             target: el10
+          - package: libratbag-ratbagd
+            target: el10
+          - package: solaar-udev
+            target: el10
+          - package: openrgb-udev-rules
+            target: el10
+          - package: yubikey-manager
+            target: el10
           - package: python3-evdev
             target: el10
           - package: xfwm4-themes

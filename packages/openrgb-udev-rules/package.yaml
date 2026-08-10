@@ -1,0 +1,43 @@
+# OpenRGB udev rules for EL10 (#122).
+#
+# OpenRGB derives its device list from the controller sources at build time;
+# shipping a hand-maintained rules file would silently go stale as hardware is
+# added upstream.  The qmake target below runs the upstream generator after
+# producing the preprocessor artifacts it consumes.
+schema: 1
+name: openrgb-udev-rules
+version: "1.0~rc2"
+release: 1
+summary: Udev rules for OpenRGB devices
+description: Udev rules granting user sessions access to supported RGB devices.
+license: GPL-2.0-only AND GPL-3.0-or-later
+source:
+  url: https://gitlab.com/CalcProgrammer1/OpenRGB/-/archive/74cbdcce55711f57b3ca4439d3136f5bb7068db7/OpenRGB-74cbdcce55711f57b3ca4439d3136f5bb7068db7.tar.gz
+  sha256: bc201b192f8ca4fdf84b1b75c53e0faea9755ffb9d3d50e91909d8c7d7709686
+  directory: OpenRGB-74cbdcce55711f57b3ca4439d3136f5bb7068db7
+build_system: custom
+build:
+  commands:
+    - qmake-qt5 OpenRGB.pro PREFIX=/usr
+    - make -j$(nproc)
+    - make udev_rules
+install:
+  commands:
+    - install -Dm0644 60-openrgb.rules "{destdir}/usr/lib/udev/rules.d/60-openrgb.rules"
+dependencies:
+  build:
+    capabilities: [c-compiler, cpp-compiler, pkg-config]
+    targets:
+      el10:
+        - qt5-qtbase-devel
+        - qt5-qttools-devel
+        - libusb1-devel
+        - hidapi-devel
+        - mbedtls-devel
+  runtime:
+    targets: {el10: [systemd-udev]}
+files:
+  common: [usr/lib/udev/rules.d/60-openrgb.rules]
+verify:
+  smoke: test -s /usr/lib/udev/rules.d/60-openrgb.rules
+targets: [el10]

@@ -1,0 +1,60 @@
+# ratbagd for EL10 (#122).
+#
+# EL10 does not ship libratbag.  Build the upstream project as one payload so
+# the daemon, its Python control tool, device database, DBus policy and shared
+# Logitech receiver library stay in the same tested closure.
+schema: 1
+name: libratbag-ratbagd
+version: "0.18"
+release: 1
+summary: DBus daemon for programmable input devices
+description: >-
+  ratbagd provides a DBus daemon and command-line tool for configuring
+  programmable mice and other supported input devices.
+license: MIT
+source:
+  url: https://github.com/libratbag/libratbag/archive/v0.18.tar.gz
+  sha256: 8a7f8bf00c21ef5ad534e2804ed537f2fc6521a3932dd822c438e561a85a1bcd
+  directory: libratbag-0.18
+build_system: meson
+build:
+  meson_options: [-Ddocumentation=false, -Dtests=false]
+dependencies:
+  build:
+    common: [meson, ninja-build, systemd]
+    capabilities: [c-compiler, cpp-compiler, pkg-config]
+    targets:
+      el10:
+        - libevdev-devel
+        - libudev-devel
+        - glib2-devel
+        - json-glib-devel
+        - check-devel
+        - python3-devel
+        - python3-gobject
+        - python3-lxml
+        - python3-evdev
+        - swig
+        - libunistring-devel
+  runtime:
+    targets:
+      # libudev is shipped by systemd-libs on EL10; the generated RPM records
+      # that soname automatically, so do not name the non-existent Fedora
+      # virtual package here.
+      el10: [libevdev, glib2, json-glib, python3, python3-gobject]
+files:
+  common:
+    - usr/sbin/ratbagd
+    - usr/bin/ratbagctl
+    - usr/bin/lur-command
+    - usr/lib64/liblur.so.*
+    - usr/share/libratbag/
+    - usr/share/man/man1/ratbagctl.1*
+    - usr/share/man/man1/lur-command.1*
+    - usr/share/man/man8/ratbagd.8*
+    - usr/share/dbus-1/system.d/org.freedesktop.ratbag1.conf
+    - usr/share/dbus-1/system-services/org.freedesktop.ratbag1.service
+    - usr/lib/systemd/system/ratbagd.service
+verify:
+  smoke: test -x /usr/sbin/ratbagd && test -x /usr/bin/ratbagctl && test -f /usr/lib/systemd/system/ratbagd.service
+targets: [el10]

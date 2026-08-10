@@ -1,0 +1,36 @@
+# YubiKey Manager for EL10 (#122).
+schema: 1
+name: yubikey-manager
+version: "5.9.2"
+release: 1
+summary: Tool and Python library for configuring YubiKeys
+description: >-
+  ykman and the yubikit Python library for configuring YubiKey OTP, PIV and
+  FIDO features.
+license: BSD-2-Clause
+source:
+  url: https://github.com/Yubico/yubikey-manager/archive/60ab055dd34b6384bdd4ceb85a38d36bc15ce58a.tar.gz
+  sha256: 0a1778ddc60bc0aab135b3b9fd2f0f927bc8d61ef57e3b217735be215a6b8032
+  directory: yubikey-manager-60ab055dd34b6384bdd4ceb85a38d36bc15ce58a
+build_system: custom
+build:
+  commands:
+    - python3 -m pip wheel --no-deps --no-build-isolation --wheel-dir dist .
+dependencies:
+  build:
+    common: [python3-pip, python3-poetry-core, python3-devel, swig, pcsc-lite-devel, ykpers]
+  runtime:
+    targets:
+      el10: [python3, python3-cryptography, python3-pyscard, python3-fido2, python3-click, python3-keyring, python3-pskc, ykpers, pcsc-lite-libs]
+install:
+  commands:
+    - python3 -m pip install --no-deps --no-index --root "{destdir}" --prefix /usr dist/*.whl
+files:
+  common:
+    - usr/bin/ykman
+    - usr/lib/python3*/site-packages/ykman/
+    - usr/lib/python3*/site-packages/yubikit/
+    - usr/lib/python3*/site-packages/yubikey_manager-*.dist-info/
+verify:
+  smoke: ykman --version
+targets: [el10]

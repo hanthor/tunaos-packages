@@ -1,0 +1,23 @@
+# Solaar receiver permissions for EL10 (#122).
+schema: 1
+name: solaar-udev
+version: "1.1.20"
+release: 1
+summary: Udev rules for Logitech receivers
+description: >-
+  Udev rules granting logged-in users access to Logitech Unifying, Nano and
+  Bluetooth receivers used by Solaar.
+license: GPL-2.0-or-later
+source:
+  url: https://github.com/pwr-Solaar/Solaar/archive/1.1.20.tar.gz
+  sha256: faf3e1bf86a97766c1c0ad443cd4272bf23a77f5a2555c796e6d80e535cc7aeb
+  directory: Solaar-1.1.20
+build_system: data
+install:
+  files:
+    - {source: rules.d/42-logitech-unify-permissions.rules, destination: usr/lib/udev/rules.d/42-logitech-unify-permissions.rules}
+files:
+  common: [usr/lib/udev/rules.d/42-logitech-unify-permissions.rules]
+verify:
+  smoke: test -f /usr/lib/udev/rules.d/42-logitech-unify-permissions.rules
+targets: [el10]
