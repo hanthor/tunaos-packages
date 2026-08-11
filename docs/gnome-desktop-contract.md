@@ -31,9 +31,11 @@ dpkg-query -W -f '${binary:Package}\\n' | \
   python3 scripts/verify-gnome-desktop-experience.py /dev/stdin
 ```
 
-The check deliberately validates names rather than image size or package
+The check deliberately validates components rather than image size or package
 count. Metapackages can expand to very different numbers of packages across
 openSUSE, Debian, and Ubuntu; a size threshold would miss a missing component
-or reject a valid but compact dependency closure. Base-specific translations
-should use the package names actually emitted by that package manager, and any
-name that cannot be resolved should fail the build rather than be ignored.
+or reject a valid but compact dependency closure. The checker accepts `gdm3`
+as the Debian/Ubuntu spelling of Fedora/EL/openSUSE's `gdm`; all other
+required components remain explicit. Any name that cannot be resolved should
+fail the build rather than be ignored. This is the package-side contract for
+the non-RPM parity gap tracked in [#132](https://github.com/tuna-os/tunaos-packages/issues/132).

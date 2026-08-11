@@ -1,6 +1,6 @@
 # Desktop Parity Audit & Contract Specifications
 
-This document outlines the desktop parity requirements, contract specifications, and verification tools established to address [tuna-os/tunaos-packages#133](https://github.com/tuna-os/tunaos-packages/issues/133).
+This document outlines the desktop parity requirements, contract specifications, and verification tools established to address [tuna-os/tunaos-packages#133](https://github.com/tuna-os/tunaos-packages/issues/133) and the GNOME-specific gap in [#132](https://github.com/tuna-os/tunaos-packages/issues/132).
 
 ## Context & Problem Statement
 
@@ -35,4 +35,4 @@ Required package components:
 ## Status & Action Plan
 
 1. **`marlin` non-GNOME & `flounder` cosmic/niri**: Fixed by enforcing mandatory package verification and hard-failing builds when desktop session files or required desktop roots are missing.
-2. **Package Name Mapping (zypper/apt)**: Cross-base package list mappings are continuously audited and synchronized across DNF, APT, and ZYPPER definitions in `manifests/`.
+2. **Package Name Mapping (zypper/apt)**: Cross-base package list mappings are continuously audited and synchronized across DNF, APT, and ZYPPER definitions in the consuming `tuna-os/tunaos` manifests. The GNOME contract accepts the only deliberate display-manager spelling difference (`gdm`/`gdm3`) while requiring the same user-facing components on every base.

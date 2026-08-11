@@ -15,7 +15,6 @@ from collections.abc import Iterable
 
 REQUIRED_GNOME_PACKAGES = frozenset(
     {
-        "gdm",
         "gnome-keyring",
         "gnome-session",
         "gnome-shell",
@@ -26,10 +25,26 @@ REQUIRED_GNOME_PACKAGES = frozenset(
     }
 )
 
+# Ubuntu and Debian call the GNOME display manager gdm3; Fedora, EL and
+# openSUSE call the same component gdm. Keep the contract about the desktop
+# component rather than forcing every target through RPM naming.
+REQUIRED_GNOME_PACKAGE_GROUPS = {
+    "display-manager": frozenset({"gdm", "gdm3"}),
+    **{package: frozenset({package}) for package in REQUIRED_GNOME_PACKAGES},
+}
 
-def missing_packages(installed: Iterable[str], required: Iterable[str] = REQUIRED_GNOME_PACKAGES) -> list[str]:
+
+def missing_packages(
+    installed: Iterable[str],
+    required: Iterable[str] = REQUIRED_GNOME_PACKAGES,
+) -> list[str]:
     installed_names = {line.strip().split()[0] for line in installed if line.strip()}
-    return sorted(set(required) - installed_names)
+    groups = dict(REQUIRED_GNOME_PACKAGE_GROUPS)
+    # Preserve the helper's useful custom-subset behavior for tests and other
+    # callers while applying aliases to the default complete contract.
+    if required != REQUIRED_GNOME_PACKAGES:
+        groups = {name: frozenset({name}) for name in required}
+    return sorted(name for name, aliases in groups.items() if not aliases & installed_names)
 
 
 def main() -> int:

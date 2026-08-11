@@ -14,6 +14,19 @@ SPEC.loader.exec_module(checker)
 
 def test_accepts_a_complete_gnome_desktop_package_set() -> None:
     installed = [f"{package} 1" for package in checker.REQUIRED_GNOME_PACKAGES]
+    installed.append("gdm 1")
+    assert checker.missing_packages(installed) == []
+
+
+def test_accepts_debian_and_ubuntu_display_manager_name() -> None:
+    installed = [f"{package} 1" for package in checker.REQUIRED_GNOME_PACKAGES]
+    installed.append("gdm3 1")
+    assert checker.missing_packages(installed) == []
+
+
+def test_accepts_rpm_display_manager_name() -> None:
+    installed = [f"{package} 1" for package in checker.REQUIRED_GNOME_PACKAGES]
+    installed.append("gdm 1")
     assert checker.missing_packages(installed) == []
 
 
