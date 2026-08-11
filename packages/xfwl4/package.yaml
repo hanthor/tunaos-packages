@@ -30,6 +30,9 @@ build:
   cargo_features: [udev, egl, xwayland, smithay/renderer_pixman, smithay/renderer_gl]
   cargo_offline: true
   environment:
+    # xfwl4's build.rs defaults to /usr/local when PREFIX is unset. That
+    # leaves the packaged defaults lookup outside the system prefix.
+    PREFIX: /usr
     RUSTFLAGS: -C relocation-model=pic
     GETTEXT_SYSTEM: "1"
   cargo_config: |
