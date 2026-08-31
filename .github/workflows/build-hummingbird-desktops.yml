@@ -33,13 +33,19 @@ on:
       - scripts/select-desktop-tiers.py
       - src/hummingbird/**
 
+  # Re-run the full published matrix often enough to compound progress from
+  # R2 after a job reaches the six-hour ceiling. The concurrency group below
+  # prevents overlap if a run takes longer than expected.
+  schedule:
+    - cron: '0 */7 * * *'
+
   workflow_dispatch:
     inputs:
       desktop:
         description: Desktop to build (resolved to tiers via the gap report)
         type: choice
         options: [gnome, kde, cosmic, niri, xfce, all]
-        default: gnome
+        default: all
       tiers:
         description: >
           Comma-separated tier names to build, e.g. "gnome-00,gnome-01".
@@ -57,7 +63,7 @@ on:
       publish:
         description: Sign and publish the resulting RPM repository
         type: boolean
-        default: false
+        default: true
       force:
         description: Rebuild packages already present in the local repo
         type: boolean
@@ -71,8 +77,9 @@ concurrency:
 
 env:
   R2_BUCKET: bluefin
-  # workflow_dispatch inputs are absent on push. These resolved values preserve
-  # manual behavior while making a main-branch run mean a full published matrix.
+  # workflow_dispatch inputs are absent on push/schedule. These resolved values
+  # make scheduled and main-branch runs full published matrices, while manual
+  # inputs still allow a narrow desktop/tier verification run.
   TRIGGER_DESKTOP: ${{ inputs.desktop || 'all' }}
   TRIGGER_TIERS: ${{ inputs.tiers || '' }}
   TRIGGER_EXCLUDE_TIERS: ${{ inputs.exclude_tiers || '' }}
@@ -366,7 +373,7 @@ jobs:
       # run rebuild only what is missing. The job still fails on failed
       # packages — publishing is not success, it is not losing the work.
       - name: Sign RPMs and publish
-        if: ${{ !cancelled() && (github.event_name == 'push' || inputs.publish) }}
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || inputs.publish) }}
         uses: crazy-max/ghaction-import-gpg@v7
         id: import-gpg
         with:
@@ -374,7 +381,7 @@ jobs:
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Publish signed rpm-md repository
-        if: ${{ !cancelled() && (github.event_name == 'push' || inputs.publish) }}
+        if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || inputs.publish) }}
         run: |
           echo "%_signature gpg" > ~/.rpmmacros
           echo "%_gpg_name ${{ steps.import-gpg.outputs.keyid }}" >> ~/.rpmmacros
