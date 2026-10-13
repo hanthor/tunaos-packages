@@ -14,6 +14,14 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 CELLS = {"skipjack": "el10", "albacore": "alma10", "yellowfin": "alma10-kitten"}
+# Candidate-subset platform map (no consumer adapter consulted): mirrors the
+# per-arch platform spelling used by consumer contracts (PR819).
+ARCH_PLATFORMS = {"x86_64": "linux/amd64", "aarch64": "linux/arm64"}
+# The EL10-only subset: skipjack cells alone. Alma consumer cells are absent
+# here and must never be relabeled as EL10 evidence.
+EL10_ONLY_CELLS = frozenset(
+    {("skipjack", "el10", arch) for arch in ("x86_64", "aarch64")}
+)
 BUILD = [
     "clang-devel",
     "pkgconfig(dbus-1)",
@@ -82,7 +90,16 @@ def read_archive(path):
         return members
 
 
-def stage(recipe_path, factory_path, inputs_path, source_archive, vendor_archive, output):
+def _stage_impl(
+    recipe_path,
+    factory_path,
+    inputs_path,
+    source_archive,
+    vendor_archive,
+    output,
+    expected_cells=None,
+    require_consumer_adapters=True,
+):
     recipe_input = Path(recipe_path).read_bytes()
     factory_input = Path(factory_path).read_bytes()
     json_input = Path(inputs_path).read_bytes()
@@ -188,31 +205,41 @@ def stage(recipe_path, factory_path, inputs_path, source_archive, vendor_archive
         "hash-bound vendor GitHub release URL required",
     )
     cells = inputs.get("cells", [])
-    expected = {
-        (consumer, target, arch)
-        for consumer, target in CELLS.items()
-        for arch in ("x86_64", "aarch64")
-    }
+    if expected_cells is None:
+        expected = {
+            (consumer, target, arch)
+            for consumer, target in CELLS.items()
+            for arch in ("x86_64", "aarch64")
+        }
+        count_message = "six distinct consumer/base/architecture cells required"
+    else:
+        expected = set(expected_cells)
+        count_message = (
+            f"{len(expected)} distinct candidate cells required "
+            f"({sorted({c for c, _, _ in expected})})"
+        )
     require(
-        len(cells) == 6
+        len(cells) == len(expected)
         and {(c.get("consumer"), c.get("target"), c.get("arch")) for c in cells} == expected,
-        "six distinct consumer/base/architecture cells required",
+        count_message,
     )
     planned = []
     for cell in cells:
         consumer, target, arch = cell["consumer"], cell["target"], cell["arch"]
         cfg = factory.get("targets", {}).get(target, {})
-        adapter = factory.get("consumer_adapters", {}).get(consumer, {})
         require(
             cfg.get("status") == "supported"
             and cfg.get("format") == "rpm"
             and arch in cfg.get("architectures", []),
             f"missing supported native target: {target}/{arch} (PR819)",
         )
-        require(
-            adapter.get("target") == target and arch in adapter.get("architectures", {}).values(),
-            f"wrong consumer adapter: {consumer}/{target}/{arch}",
-        )
+        if require_consumer_adapters:
+            adapter = factory.get("consumer_adapters", {}).get(consumer, {})
+            require(
+                adapter.get("target") == target
+                and arch in adapter.get("architectures", {}).values(),
+                f"wrong consumer adapter: {consumer}/{target}/{arch}",
+            )
         image = cell.get("base_image", "")
         probe = cfg.get("probe_images", {}).get(arch) or cfg.get("probe_image", "")
         repository = probe.split("@", 1)[0].rsplit(":", 1)[0]
@@ -224,18 +251,29 @@ def stage(recipe_path, factory_path, inputs_path, source_archive, vendor_archive
             ("@sha256:" not in probe or image == probe) and cell.get("base_reference") == probe,
             f"base identity mismatch: {target}/{arch}",
         )
-        platform = next((p for p, a in adapter["architectures"].items() if a == arch), None)
+        if require_consumer_adapters:
+            platform = next(
+                (p for p, a in adapter["architectures"].items() if a == arch), None
+            )
+        else:
+            platform = ARCH_PLATFORMS[arch]
         require(cell.get("platform") == platform, f"platform mismatch: {target}/{arch}")
         baseline = (
             "armv8-a"
             if arch == "aarch64"
             else ("x86-64-v3" if consumer == "skipjack" else "x86-64-v2")
         )
-        require(
-            baseline in adapter.get("cpuBaselines", [])
-            and cfg.get("cpu_baselines", {}).get(arch, baseline) == baseline,
-            f"CPU baseline mismatch: {target}/{arch}",
-        )
+        if require_consumer_adapters:
+            require(
+                baseline in adapter.get("cpuBaselines", [])
+                and cfg.get("cpu_baselines", {}).get(arch, baseline) == baseline,
+                f"CPU baseline mismatch: {target}/{arch}",
+            )
+        else:
+            require(
+                cfg.get("cpu_baselines", {}).get(arch, baseline) == baseline,
+                f"CPU baseline mismatch: {target}/{arch}",
+            )
         caps = recipe.get("dependencies", {}).get("build", {}).get("capabilities", [])
         mapped = []
         for cap in caps:
@@ -320,17 +358,50 @@ def stage(recipe_path, factory_path, inputs_path, source_archive, vendor_archive
         **admitted,
         "cells": [entry[2] for entry in planned],
     }
+    if expected_cells is not None:
+        # Subset receipts say which consumers they cover; the default
+        # six-cell receipt is byte-identical to before.
+        receipt["cell_subset"] = sorted({consumer for consumer, _, _ in expected})
     (out / "candidate-inputs.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
+
+
+def stage(recipe_path, factory_path, inputs_path, source_archive, vendor_archive, output):
+    """Stage the whole six-cell candidate set (unchanged default)."""
+    return _stage_impl(
+        recipe_path, factory_path, inputs_path, source_archive, vendor_archive, output
+    )
+
+
+def stage_el10_only(
+    recipe_path, factory_path, inputs_path, source_archive, vendor_archive, output
+):
+    """Stage only the skipjack/el10 candidate cells; Alma cells absent, not relabeled."""
+    return _stage_impl(
+        recipe_path,
+        factory_path,
+        inputs_path,
+        source_archive,
+        vendor_archive,
+        output,
+        expected_cells=EL10_ONLY_CELLS,
+        require_consumer_adapters=False,
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("recipe", "factory", "inputs", "source-archive", "vendor-archive", "output"):
         parser.add_argument("--" + name, required=True, type=Path)
+    parser.add_argument(
+        "--only-el10",
+        action="store_true",
+        help="stage only the skipjack/el10 candidate cells (candidate-only subset)",
+    )
     args = parser.parse_args()
+    entry = stage_el10_only if args.only_el10 else stage
     try:
-        stage(
+        entry(
             args.recipe,
             args.factory,
             args.inputs,
