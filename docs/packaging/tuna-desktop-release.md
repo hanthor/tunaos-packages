@@ -119,6 +119,22 @@ sync-type = zipfile
 sync-uri = https://repo.tunaos.org/gentoo/overlay/tunaos-overlay.zip
 ```
 
+The served index contains `CPV: gui-wm/tuna-desktop-1.0.0_beta1` and
+`PATH: gui-wm/tuna-desktop/tuna-desktop-1.0.0_beta1-1.gpkg.tar`.
+Guppy's desktop stage uses `default/linux/amd64/23.0/desktop/systemd`,
+`--binpkg-respect-use=y`, `*/* -abi_x86_32`, and an elogind mask. The
+earlier `--binpkg-respect-use=n` setting applies to its base bootstrap,
+not its desktop install. Keep the desktop policy: otherwise Gentoo's binhost
+can select incompatible elogind/multilib dependency builds. This package's
+only IUSE is cargo.eclass's `debug`, disabled in both profiles.
+
+The edge blocks requests with `User-Agent: Python-urllib/*`.
+For binary downloads, Portage supplies its own HTTP identification.
+For overlay sync, Portage's `zipfile` module uses the generic agent.
+The verifier supplies `User-Agent: TunaOS-Package-Verifier/1.0` to `emaint`.
+Source-overlay consumers must also set an agent for HTTP requests.
+The binhost does not need the overlay.
+
 ## Hummingbird
 
 Tideforge does not build tuna-desktop for Hummingbird. Its `hummingbird`
