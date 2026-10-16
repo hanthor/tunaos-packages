@@ -10,16 +10,15 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 from urllib.request import urlopen
 
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tideforge import pacman_version  # noqa: E402
-
 
 ARCH_API = "https://archlinux.org/packages/extra/{architecture}/{package}/json/"
 

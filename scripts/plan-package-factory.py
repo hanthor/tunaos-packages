@@ -16,10 +16,9 @@ from typing import Any
 import yaml
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from target_platform import build_context
-import factory_contract  # noqa: E402  (needs the path above)
 import consumer_contract
-
+import factory_contract  # noqa: E402  (needs the path above)
+from target_platform import build_context
 
 RECIPE_CHANGE = re.compile(r"^packages/([^/]+)/")
 COMMON_INPUTS = {
@@ -498,8 +497,7 @@ def yaml_at_revision(root: pathlib.Path, revision: str, path: str) -> dict[str, 
         ["git", "show", f"{revision}:{path}"],
         cwd=root,
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     value = yaml.safe_load(completed.stdout)

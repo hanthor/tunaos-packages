@@ -198,7 +198,7 @@ def measure(
     reproducibility_path: pathlib.Path | None = None,
 ) -> dict:
     report = {
-        "measured_at": datetime.datetime.now(datetime.timezone.utc)
+        "measured_at": datetime.datetime.now(datetime.UTC)
         .replace(microsecond=0)
         .isoformat(),
         "targets": {},

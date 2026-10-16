@@ -13,15 +13,18 @@ With a target, an auxiliary source that declares `targets` is assembled only
 for those targets, as the RPM and PKGBUILD renderers do
 (tideforge.source_entries).
 """
-import sys
-import tarfile
 import hashlib
 import shutil
+import sys
+import tarfile
 from pathlib import Path
 from urllib.request import urlretrieve
+
 import yaml
+
 sys.path.insert(0, "scripts")
 import tideforge_cache
+
 cache_dir = Path.home() / ".cache" / "tideforge" / "sources"
 def materialise(source, destination, label):
     payload = tideforge_cache.lookup(cache_dir, source["sha256"])
