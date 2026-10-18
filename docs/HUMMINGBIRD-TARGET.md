@@ -158,10 +158,13 @@ the case.
   1.48`, `gsettings-desktop-schemas >= 51.alpha`) will surface as
   `preflight-buildrequires.py` findings and become build-order entries.
   That is the expected cost, and it is the cost utah paid.
-- **The three GLIBC_2.44 packages must be rebuilt**, and the prefix should
-  be re-verified for any other symbol-version leak (`GLIBC_2.44`,
-  `OPENSSL_3.5`+, `libpython3.15`).  The checker's `needer_from:
-  published` column is the list.
+- **Published GLIBC_2.44 leaks must be rebuilt.**  The static installability
+  check covers both every desktop closure and `retained_packages`: served
+  output that is intentionally outside those closures but still needs repair.
+  `pandoc-cli` is retained until its full runtime closure (`ghc-pandoc` and
+  `pandoc-cli`) is rebuilt in the Fedora 44 root; otherwise removing it from
+  a desktop build order leaves the incompatible artifact published (#557).
+  The checker's `needer_from: published` column identifies these leaks.
 - **Name masking is the overlay's inherent cost.**  dnf's priority filter
   drops a *name* from every lower-priority repo, so a Fedora 44 package that
   needs a library the base ships under the same name at a different soname
