@@ -356,3 +356,18 @@ demonstrably stale *root-package* entry in an otherwise pinned `Cargo.lock` may
 set `build.cargo_locked: false`, but it must include a specific
 `build.cargo_lock_reason` and is accepted only after the resulting lockfile
 diff has been reviewed in the target build.
+
+### Queue-only pull requests and native canaries
+
+A target queue can serve several native release families. With
+`--canary-common`, a queue-only change tests the first declared tier of every
+selected native cell. Keep all family and architecture combinations. Do not
+collapse them to one representative. Run 39466490732 selected twelve chains for GNOME with no depth limit. The queue
+branch returned before this bound took effect.
+
+A change to a cell's own manifest or source still builds the full chain.
+For example, a GNOME queue change plus a GNOME 51 manifest change selects six
+full GNOME 51 cells and six GNOME 50 canaries. Dependency-graph edits and runs
+without `--canary-common` retain full builds. This does not establish a policy
+that every pull request must avoid full builds. The tests in
+`tests/test_target_queue_canary_bounds.py` cover these distinctions.
