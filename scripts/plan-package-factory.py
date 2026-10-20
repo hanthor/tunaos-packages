@@ -671,6 +671,8 @@ def main() -> int:
     parser.add_argument("--cell", help="optional exact cell ID for a manual run")
     parser.add_argument("--selector", help="cell ID or target=/family=/engine=/architecture=")
     parser.add_argument("--canary-common", action="store_true")
+    parser.add_argument("--single-attempt", action="store_true")
+    parser.add_argument("--expected-source-revision")
     parser.add_argument("--batch-index", type=int, default=0)
     parser.add_argument("--selection-digest")
     parser.add_argument(
@@ -739,6 +741,15 @@ def main() -> int:
     try:
         source_revision = subprocess.run(["git", "-C", str(args.root), "rev-parse", "HEAD"],
                                          check=True, capture_output=True, text=True).stdout.strip()
+        if args.single_attempt:
+            if (not args.cell or args.selector or args.changed_files or args.base
+                    or args.canary_common or args.batch_index != 0 or args.selection_digest
+                    or args.expected_source_revision != source_revision
+                    or len(selected) != 1 or selected[0]["id"] != args.cell
+                    or selected[0].get("engine") != "build-chain"
+                    or selected[0].get("tiers") or selected[0].get("canary")):
+                raise ValueError("single attempt needs one exact full-chain cell and matching source revision")
+            selected = [dict(selected[0], single_attempt=True)]
         batch_plan = selection_batches(selected, source_revision)
         if args.batch_index < 0 or args.batch_index >= len(batch_plan["shards"]):
             raise ValueError("batch index outside complete selection")
@@ -790,6 +801,7 @@ def main() -> int:
         if cell.get("engine") == "build-chain"
         and not cell.get("tiers")
         and not cell.get("canary")
+        and not args.single_attempt
     ]
     for shard_index, suffix in ((1, "c1"), (2, "c2")):
         for cell in full_chain:

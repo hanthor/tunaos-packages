@@ -371,3 +371,26 @@ full GNOME 51 cells and six GNOME 50 canaries. Dependency-graph edits and runs
 without `--canary-common` retain full builds. This does not establish a policy
 that every pull request must avoid full builds. The tests in
 `tests/test_target_queue_canary_bounds.py` cover these distinctions.
+
+### One isolated manual attempt
+
+The `single_attempt` boolean is optional and defaults to false. Use it only
+with a manual dispatch, one exact full-chain `cell`, and `source_revision`
+set to the full commit SHA. The planner rejects a different run SHA,
+selectors, shared-change modes, and batch offsets. Leave the other dispatch
+fields empty. Normal PR, push, and scheduled runs keep their existing rules.
+
+This mode runs one native job with a 360-minute limit and a 4.5-hour soft
+build budget. It adds no continuation jobs. The plan and artifact jobs also
+use runner time. A partial result remains partial: the final step fails if
+the chain deferred, after the workflow retains the available artifacts.
+Failure logs and partial packages remain available for diagnosis.
+
+Complete,
+validated outputs can enter the Actions cache. Deferred outputs cannot.
+
+A manual run does not promote to the authoritative R2 cache, the shared ORAS
+store, live repositories, or family OCI tags. EL10 artifacts from this run
+have checksums and SBOM metadata, but no production RPM signatures or
+main-push attestations. A successful job proves its existing build and smoke
+checks; dependency closure for the full desktop and boot qualification remain separate.
