@@ -577,3 +577,24 @@ jobs:
             .factory/${{ matrix.id }}/artifacts/
             .factory/${{ matrix.id }}/action-key.txt
           if-no-files-found: warn
+      - name: Require complete output from a single attempt
+        if: always() && matrix.single_attempt == true
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          CACHE_HIT: ${{ steps.verdict.outputs.hit }}
+          CACHE_VERDICT: ${{ steps.verdict.outcome }}
+          CHAIN_DEFERRED: ${{ steps.build.outputs.chain_deferred }}
+        run: |
+          set -euo pipefail
+          if [ "$CHAIN_DEFERRED" = true ]; then
+            echo "::error::Single attempt retained partial evidence; full chain closure is unproven."
+            exit 1
+          fi
+          if [ "$CACHE_VERDICT" != success ]; then
+            echo "::error::Cache verification did not complete successfully."
+            exit 1
+          fi
+          case "$CACHE_HIT:$BUILD_OUTCOME:$CHAIN_DEFERRED" in
+            true:skipped:|false:success:) ;;
+            *) echo "::error::Single attempt has missing or contradictory completion evidence."; exit 1 ;;
+          esac
