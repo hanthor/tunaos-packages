@@ -74,7 +74,7 @@ them in `%files`.
 
 ### Package factory gate fixes
 
-The GNOME 50 Alma package-factory chain now:
+The GNOME 50 and GNOME 51 Alma package-factory chains now:
 
 * accepts Mock's `rpmbuild --noprep` dynamic-buildrequires pass through the
   native Alma compiler guard;
@@ -85,6 +85,7 @@ The GNOME 50 Alma package-factory chain now:
 * omits `libosinfo` from EL10 `localsearch` build requirements and builds the
   GTK4 `colord-gtk` dependency after GTK4, avoiding an intra-tier BuildRequires
   race; `gsound` remains in the GTK core tier.
+* wires the shared GTK4 dependencies into each track's native order and catalog.
 
 ### `gdk-pixbuf2`
 *   **Origin**: Custom / Backport from Rawhide.
