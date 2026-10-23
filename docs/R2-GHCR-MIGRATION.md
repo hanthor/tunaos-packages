@@ -4,9 +4,10 @@
 
 Inventory as of 2026-10-19. The goal is to remove the R2 dependency for publication, as [utah-packages](https://github.com/projectbluefin/utah-packages) does.
 We must preserve installed systems and accumulated packages.
-This first stage is a **manual, isolated publication rehearsal**, not the
-completed cost migration. It makes no changes to existing publishers,
-objects, credentials, live family tags, Worker routes, or consumer pins.
+The original stage is a **manual, isolated publication rehearsal**, not the
+completed migration. The ORAS work below also adds a disabled-by-default
+production branch. No live objects, credentials, family tags, Worker routes
+or consumer pins have changed.
 
 ### Publishers
 
@@ -109,3 +110,185 @@ waves before you claim cost savings. The draft does not access invoices.
   separate approval and are not part of this change.
 
 Do not close #912 on the strength of this first-stage rehearsal alone.
+
+## ORAS transport and the Utah distribution model
+
+Utah main `96856f43e3bbef8e9e40e8e26c5fab654e71e3c0` publishes a signed OCI
+image with Podman. The RFC for its ORAS lookaside proposes a source contract.
+It does not supply a package publisher. We reuse the coherent repository,
+immutable digest and local native clients. ORAS transports bytes; it does not
+replace the package manager.
+
+The candidate workflow uses official ORAS **1.3.4**. The code records hashes
+of archives for both runner architectures. `scripts/oras_distribution.py` creates
+an OCI layout with standard image/config/layer media types and `/repository`.
+`oras cp --from-oci-layout` copies that image to the candidate tag.
+A generic `oras push` artifact does not supply the root filesystem that
+`COPY --from` consumers need.
+
+The publisher calculates the manifest digest locally before upload. All signatures and round-trip checks use that digest,
+not the mutable tag.
+
+The pull command needs a GHCR digest and the exact identity of the Cosign workflow.
+It verifies the signer before ORAS downloads the layout. It checks the bytes
+of the manifest, config and layer. It checks the target, format and architecture,
+and rejects members that are unsafe. Only then does an atomic rename expose
+the repository. It never executes package content.
+
+Failure leaves no destination repository. There is no HTTP, empty-tree,
+alternate-registry or R2 fallback. It rejects images without signatures or
+scope labels. For its old seed, the rehearsal retains
+the verified import path through Podman.
+
+It preserves whole repositories and signatures for RPM, openSUSE,
+DEB, Arch and Gentoo. It converts safe aliases of files to ordinary files
+with identical bytes.
+Examples include Arch database symlinks. It preserves all native
+metadata.
+
+It does **not** replace GPG verification, native indexes,
+dependency-closure checks, target admission or tests of native installation.
+The RPM candidate retains the shared wave merger and its checks for signatures
+and reverse dependencies. It compares the pulled tree with the original and
+verifies the repomd signature again.
+
+Labels for format, target and architecture describe scope, not native
+validation. Callers must use the planner for their format and retain its
+signature and solver gates. The code supplies the isolated RPM candidate and
+an opt-in branch for build-chain RPMs. We have not dispatched either workflow.
+No live publisher, consumer pin, tag, HTTP route or credential has changed.
+
+APT and Pacman remain native clients. Before cutover, materialize the verified
+tree as a local repository or get approval for a compatible HTTP origin.
+
+### Verification boundaries
+
+Tests use fixtures for every format and both architectures. They check
+deterministic digests, byte preservation and a real ORAS copy between layouts.
+They test corrupt or absent identities, scope mismatches, unsafe archive
+members, signature failures and registry errors. These fixtures are not real
+packages with native signatures.
+
+The controlled rehearsal and qualification checklist above remain necessary.
+They must cover live GHCR publication, real Cosign/OIDC checks, native dependency
+resolution, package installation, COPY consumers and upgrades of installed systems.
+Local tests alone do not complete production migration.
+
+Official transport and installation references:
+[ORAS copy](https://oras.land/docs/commands/oras_cp/) and
+[ORAS installation](https://oras.land/docs/installation/).
+
+## Opt-in build-chain production branch (not activated)
+
+`publish-build-chain-rpms.yml` keeps `distribution: r2` as its default.
+The `oras` branch needs all these operator choices after review:
+
+- Set `ORAS_PRODUCTION_ENABLED=true` and a JSON `ORAS_PRODUCTION_CELLS` list
+  in repository variables. This code does not set those variables.
+- Supply an explicit `oras_seeds` JSON map. It must contain exactly the selected
+  cell IDs and their current digests. Each digest identifies an immutable manifest.
+  No empty seed or tag bootstrap exists.
+- Use main, retain target admission and hold the shared `publish-rpms` lock.
+  A dry run cannot promote a repository. For admitted cells, the planner rejects
+  publication from R2. Thus an old tree from R2 cannot overwrite their newer state.
+
+The publication job receives no R2 credentials and never calls R2.
+It verifies its output directly, not through an HTTP substitute.
+Before Podman imports the old image, it verifies that cell's signed digest.
+This bootstrap path accepts the existing OCI format without scope labels.
+
+It retains and verifies the accumulated repository. It checks the architecture
+and dist of the wave, then calls the existing RPM merger.
+It does not evict foreign packages.
+
+The native verifier creates fresh trust databases for GPG and RPM.
+It imports only committed `public.gpg`. It needs RPM signatures, not only valid
+digests. It verifies both the seed and the final repository after pull.
+If the secret and public keys do not match, publication fails.
+This rule applies even if the runner already has the secret key.
+
+The publisher uploads a temporary tag unique to the run. It signs the local
+digest, verifies and materializes that digest, then compares all bytes.
+It verifies native signatures again and rechecks the previous live digest.
+Only then may `oras tag` update the cell channel.
+A receipt retains the prior digest for rollback.
+
+An intent record precedes the tag command. The job uploads that record even
+on failure. A timeout or failed read after the write leaves the result
+**uncertain**; it does not prove that the tag stayed unchanged.
+Inspect the current digest before any retry.
+
+### Single-writer activation prerequisite
+
+An OCI tag PUT is atomic for one manifest, but is **not compare-and-swap**.
+The second read is safe only if every writer uses the shared lock.
+Before activation, restrict or disable all other writers to admitted cell tags.
+This includes manual, external, old-revision and legacy writers.
+All writers must honor the same lock.
+
+Admission variables in the new workflow do not control old revisions or
+unrelated registry credentials. Do not activate until operators enforce this
+restriction and a rehearsal of failure cases passes.
+Rollback needs separate authorization. First confirm the channel's current
+state. Then hold the same lock and move to the retained, verified prior digest.
+
+This branch changes publication only. The build job still uses the existing
+buildroot, cache and source paths. Thus an ORAS publication does not prove
+that the full factory has no R2 dependency.
+This branch does not switch the Tideforge RPM, DEB/APT, Arch/Pacman or Gentoo
+publishers. Each needs explicit contracts for seeds, admission, signatures and
+solver checks; an RPM-specific merger is not a substitute.
+The transport preserves their formats, but fixtures do not qualify their
+production pipelines.
+
+### Capacity and runtime
+
+The image uses one uncompressed layer. This preserves transparent bytes and
+simple verification, not minimum download size.
+A 32 GiB repository needs about 32 GiB for the original tree.
+It also needs about 65 GiB of free scratch space for the downloaded layer
+and its extracted round trip. Before upload, the publisher checks for
+`2 * repository_bytes + 1 GiB` of spare capacity.
+Archive overhead and concurrent users can still exhaust disk space.
+
+Such failures stop before the channel advances. Production jobs have a
+180-minute limit. We have not measured bandwidth or full-family runtime live.
+The publisher streams the archive once to the selected layout filesystem.
+It does not create a second temporary tar. It removes the upload layout before
+pull and uses `/mnt` for scratch space where possible.
+
+The verifier enforces these limits:
+
+- 4 MiB per metadata blob.
+- 1,000,000 members per archive.
+- 64 GiB per file.
+- Total extracted bytes no greater than the verified size of the raw layer.
+
+It rejects sparse files, links and special members during extraction.
+Before publication, the publisher converts aliases that are safe to ordinary files.
+
+## Minimal no-R2 consumer path and compatibility decisions
+
+The tunaOS guide prescribes `uupd`/`bootc` for image updates.
+It prescribes Flatpak, Homebrew and containers for applications.
+Those users do not need a new HTTP service for native packages solely because
+the build repository moved.
+
+For the minimal core path, materialize verified ORAS/OCI repositories during
+image builds. Use native package managers with those local repositories.
+Retain all signature and dependency checks. After the final native transaction,
+remove or disable temporary configs. Day-2 image updates remain GHCR-based.
+
+Utah follows this pattern. Its Containerfile binds the repository during the
+build and disables the temporary repo after the last install. See
+[Utah's final repository cleanup](https://github.com/projectbluefin/utah/blob/17222de27c6db6c0a32eb704c72814ff8f7b644d/Containerfile#L346-L366).
+The disable comment changes the file size so the layer diff retains that edit.
+Verify cleanup in the final image; do not infer success from the command alone.
+
+Standalone native use has a separate compatibility contract.
+`contrib/install.sh`, `contrib/install-gnome49.sh` and `contrib/tuna-os.repo`
+promise DNF installation and updates over `repo.tunaos.org`.
+Do not silently break those interfaces or label them build-only.
+Operators must approve either a compatible HTTP origin without R2 or an explicit
+retirement or migration of that interface. This code makes neither choice.
+Existing R2 endpoints stay untouched until that decision and consumer rollout.

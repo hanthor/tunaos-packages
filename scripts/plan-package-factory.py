@@ -334,9 +334,27 @@ def select_cells(
             for cell in cells
             if cell["dependency_tree"] in graph_paths or cell["target_queue"] in graph_paths
         ]
-        if changed_graph_ids is None:
-            return graph_cells
-        return [cell for cell in graph_cells if cell["id"] in changed_graph_ids]
+        if changed_graph_ids is not None:
+            graph_cells = [cell for cell in graph_cells if cell["id"] in changed_graph_ids]
+        # Queue policy is shared by release families. A queue-only PR must not
+        # rebuild all of them in full (run 39466490732 selected twelve chains).
+        # Preserve full builds for actual manifest/source edits in the same diff.
+        owners = [
+            cell for cell in cells
+            if (cell["engine"] == "tideforge" and cell["package"] in changed_packages)
+            or (cell["engine"] == "build-chain" and any(
+                path == cell["manifest"]
+                or any(path.startswith(prefix) for prefix in cell["source_paths"])
+                for path in changed
+            ))
+        ]
+        owner_ids = {cell["id"] for cell in owners}
+        shared = [cell for cell in graph_cells if cell["id"] not in owner_ids]
+        if canary_common and not any(DEPENDENCY_TREE_CHANGE.match(path) for path in graph_paths):
+            native = [cell for cell in shared if cell["engine"] == "build-chain"]
+            shared = [cell for cell in shared if cell["engine"] != "build-chain"]
+            shared += bound_to_canary_tiers(native)
+        return owners + shared
     selected = []
     # Cells pulled in ONLY because a renderer script moved -- build-chain.sh,
     # parse-build-order.py, import-fedora-distgit.py. Nothing about the
@@ -653,6 +671,8 @@ def main() -> int:
     parser.add_argument("--cell", help="optional exact cell ID for a manual run")
     parser.add_argument("--selector", help="cell ID or target=/family=/engine=/architecture=")
     parser.add_argument("--canary-common", action="store_true")
+    parser.add_argument("--single-attempt", action="store_true")
+    parser.add_argument("--expected-source-revision")
     parser.add_argument("--batch-index", type=int, default=0)
     parser.add_argument("--selection-digest")
     parser.add_argument(
@@ -721,6 +741,17 @@ def main() -> int:
     try:
         source_revision = subprocess.run(["git", "-C", str(args.root), "rev-parse", "HEAD"],
                                          check=True, capture_output=True, text=True).stdout.strip()
+        if args.single_attempt:
+            if (not args.cell or args.selector or args.changed_files or args.base
+                    or args.canary_common or args.batch_index != 0 or args.selection_digest
+                    or args.expected_source_revision != source_revision
+                    or len(selected) != 1 or selected[0]["id"] != args.cell
+                    or selected[0].get("engine") != "build-chain"
+                    or selected[0].get("tiers") or selected[0].get("canary")):
+                raise ValueError(
+                    "single attempt needs one exact full-chain cell and matching source revision"
+                )
+            selected = [dict(selected[0], single_attempt=True)]
         batch_plan = selection_batches(selected, source_revision)
         if args.batch_index < 0 or args.batch_index >= len(batch_plan["shards"]):
             raise ValueError("batch index outside complete selection")
@@ -772,6 +803,7 @@ def main() -> int:
         if cell.get("engine") == "build-chain"
         and not cell.get("tiers")
         and not cell.get("canary")
+        and not args.single_attempt
     ]
     for shard_index, suffix in ((1, "c1"), (2, "c2")):
         for cell in full_chain:
