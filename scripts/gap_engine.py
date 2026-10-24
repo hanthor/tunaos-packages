@@ -34,6 +34,7 @@ import json
 import lzma
 import pathlib
 import sys
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -82,6 +83,13 @@ def target_measurement(factory: dict, target_id: str) -> dict:
 
 
 def fetch(url: str, cache: pathlib.Path) -> bytes:
+    # A local tree is never cached: the publish gate indexes `repo/` with
+    # createrepo_c and then asks this engine about it in the same process
+    # tree, so a cache keyed by URL would answer the second question with
+    # the first question's bytes -- the one case where the index behind a
+    # URL legitimately changes within a run.
+    if url.startswith("file://"):
+        return pathlib.Path(urllib.parse.urlparse(url).path).read_bytes()
     key = hashlib.sha256(url.encode()).hexdigest()[:16]
     blob = cache / key
     if blob.exists():

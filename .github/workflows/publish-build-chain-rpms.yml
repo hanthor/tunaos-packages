@@ -236,14 +236,33 @@ jobs:
       #
       # An unreachable index prints nothing and the file is empty: the chain
       # then behaves exactly as it did before this step.
+      # One exception to "served means done" (#629): a package the index
+      # serves and the TARGET CANNOT INSTALL. libavutil-free, libavfilter-free
+      # and zvbi were built on the old Rawhide root, require
+      # `libm.so.6(GLIBC_2.44)` that Hummingbird's glibc 2.43 does not
+      # provide, and were still served -- still uninstallable -- on
+      # 2026-10-24, seven weeks after the root moved, because this skip said
+      # they existed. The installability checker names them; withholding them
+      # here is what makes the wave rebuild them in the right root.
       - name: List what the published index already serves
         if: steps.verdict.outputs.hit != 'true'
         env:
           R2_PATH: ${{ matrix.r2_path }}
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.architecture }}
         run: |
           set -euo pipefail
+          except=()
+          if [[ "$TARGET" == hummingbird ]]; then
+            pip install -q pyyaml zstandard
+            python3 scripts/check-hummingbird-installability.py --arch "$ARCH" \
+              --print-rebuild-names > /tmp/rebuild-names-${{ matrix.id }}.txt
+            echo "served but uninstallable, to rebuild: $(wc -l < /tmp/rebuild-names-${{ matrix.id }}.txt)"
+            except=(--except-names /tmp/rebuild-names-${{ matrix.id }}.txt)
+          fi
           python3 scripts/list-served-nvrs.py \
-            "https://repo.tunaos.org/${R2_PATH}/" > /tmp/served-nvrs-${{ matrix.id }}.txt
+            "https://repo.tunaos.org/${R2_PATH}/" "${except[@]}" \
+            > /tmp/served-nvrs-${{ matrix.id }}.txt
           echo "served NVRs for ${{ matrix.id }}: $(wc -l < /tmp/served-nvrs-${{ matrix.id }}.txt)"
       # Hummingbird's mock config resolves utah-shipped BuildRequires (gtk4,
       # libadwaita) from a file:// [utah] repo, and build-chain.sh refuses a
@@ -552,6 +571,36 @@ jobs:
           set -euo pipefail
           bash scripts/publish-rpm-wave.sh \
             --staged staged --repo repo --subdir build-chain --evict-foreign
+      # THE CONSUMER'S QUESTION, BEFORE THE BUCKET HEARS IT (#629).
+      #
+      # `publish-rpm-wave.sh` has just run createrepo_c over `repo/`, so the
+      # tree on disk IS the index this job is about to make the served one.
+      # Asking it the installability question here is the only moment where
+      # the answer can still change the outcome: after the sync-up, a wave
+      # that made a desktop unresolvable is what consumers get until the next
+      # wave, and `rclone sync` has no undo.
+      #
+      # Not a green gate -- no Hummingbird desktop resolves yet
+      # (docs/HUMMINGBIRD-TARGET.md §2), so demanding green would refuse every
+      # wave forever. It is a RATCHET: the wave may fix blockers, it may not
+      # add one, measured against
+      # docs/hummingbird-installability-baseline.json. When the target's own
+      # repository moves under the baseline, refresh it with
+      # `--write-baseline` in its own reviewed commit.
+      - name: Refuse a wave that regresses installability
+        if: ${{ matrix.target == 'hummingbird' }}
+        run: |
+          set -euo pipefail
+          pip install -q pyyaml zstandard
+          python3 scripts/check-hummingbird-installability.py \
+            --arch '${{ matrix.architecture }}' \
+            --published-index "file://${PWD}/repo" \
+            --fail-on-regression | tee installability-gate.md
+          {
+            echo "### Hummingbird installability of the wave (${{ matrix.id }})"
+            echo ""
+            cat installability-gate.md
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Sync up
         if: ${{ !inputs.dry_run }}
         env:

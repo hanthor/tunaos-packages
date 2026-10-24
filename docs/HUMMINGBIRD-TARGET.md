@@ -108,7 +108,9 @@ plan.
 
 `scripts/check-hummingbird-installability.py` runs daily
 (`.github/workflows/hummingbird-installability.yml`), advisory, per arch.
-It becomes a gate the day a desktop first resolves.
+It becomes a gate the day a desktop first resolves.  Since §10 it is also
+a *ratchet* on the publish path, which does not wait for that day: a wave
+may fix blockers, it may not add one.
 
 ## 4. What utah-packages does differently, and what this repository took
 
@@ -161,7 +163,10 @@ the case.
 - **The three GLIBC_2.44 packages must be rebuilt**, and the prefix should
   be re-verified for any other symbol-version leak (`GLIBC_2.44`,
   `OPENSSL_3.5`+, `libpython3.15`).  The checker's `needer_from:
-  published` column is the list.
+  published` column is the list.  *Done differently, and §10 says why the
+  list was still live seven weeks later: the checker now classifies the
+  shape rather than leaving it to a reader, and the chain is what had to
+  change.*
 - **Name masking is the overlay's inherent cost.**  dnf's priority filter
   drops a *name* from every lower-priority repo, so a Fedora 44 package that
   needs a library the base ships under the same name at a different soname
@@ -333,3 +338,67 @@ The chain-band workflow caches the tree by pin and mounts it for
 the build. `build-chain.sh` stops a hummingbird config without it.
 `tests/test_materialize_consumed_repo.py` covers the extractor, the
 fail-closed paths, and the empty-repo shape.
+
+## 10. Why the leak outlived the root move, and what now stops it (2026-10-24)
+
+§2 named three packages the Rawhide buildroot leaked —
+`gstreamer1-plugins-good`, `libavutil-free`, `zvbi`, all requiring
+`libm.so.6(GLIBC_2.44)` that Hummingbird's glibc 2.43 cannot provide — and
+§6 said they "must be rebuilt".  The root moved to Fedora 44 on 2026-09-02.
+Re-measured on 2026-10-24 against the live indexes
+(`repo.tunaos.org/hummingbird/20251124-x86_64`, 8822 binaries, utah
+`38da5357…` consumed), the prefix still answers:
+
+| capability | needed by, in OUR prefix | class |
+|---|---|---|
+| `libm.so.6(GLIBC_2.44)(64bit)` | `libavutil-free`, `libavfilter-free`, `zvbi` | `abi_symbol` |
+| `libjsoncpp.so.26()(64bit)` | `openxr-libs`, `waybar` | `abi_soname` |
+
+The root was never the whole mechanism.  `build-chain.sh --served-nvrs`
+treats the published index as the durable record of what exists (#544), and
+a package built in the WRONG root exists at exactly the NVR the right root
+would produce — same `%{VERSION}`, same `.bfin1`.  So every leg since the
+move computed the NVR, found it served, and skipped it.  Seven weeks of
+waves could not have fixed these packages; nothing was asking them to.
+
+Three changes, each small, together a closed loop:
+
+1. **The checker classifies instead of listing.**
+   `scripts/check-hummingbird-installability.py` now labels every
+   unresolved capability: `abi_symbol` (the library IS served, the symbol
+   version is not), `abi_soname` (served at another major), or `absent`
+   (nothing serves the name at any version — a package to BUILD).  Only
+   the first two are fixed by rebuilding, and only when the needer is ours;
+   `--print-rebuild-names` prints exactly those packages.
+2. **A served package the target cannot install no longer counts as built.**
+   `scripts/list-served-nvrs.py --except-names` withholds those names — and
+   every binary of their source build, because the skip is keyed on the
+   first binary `rpmspec -q` names for the spec, so withholding
+   `libavutil-free` while leaving `ffmpeg-free` served changes nothing.
+   Both chain callers (`publish-build-chain-rpms.yml`, `chain-band.yml`)
+   pass it for hummingbird: measured on the live index, 5 names withhold
+   146 NVRs (the ffmpeg, zvbi, openxr and waybar source builds), out of
+   14353 served.  Everything else still skips, so legs stay incremental.
+3. **A wave that regresses installability does not publish.**  After
+   `publish-rpm-wave.sh` signs and indexes the tree and BEFORE the
+   `rclone sync` that makes it the served index, the publisher runs the
+   walk over `file://…/repo` — the exact bytes about to ship — with
+   `--fail-on-regression` against
+   `docs/hummingbird-installability-baseline.json`.  A wave may fix
+   blockers; it may not add one, and a desktop that was resolvable may not
+   stop being so.  Counts are not the contract, the sets are.
+
+Not a green gate: no desktop resolves yet (x86_64 on the day this landed:
+gnome 24 unresolved, kde 24, niri 22, tuna 17, xfce 14, cosmic 10), and
+demanding green would refuse every wave forever.  The baseline is the
+recorded state of that distance, per architecture, with the index
+provenance it was measured against.  When the target's own repository
+moves under it, refresh it deliberately:
+
+```
+scripts/check-hummingbird-installability.py --arch x86_64 --write-baseline
+scripts/check-hummingbird-installability.py --arch aarch64 --write-baseline
+```
+
+and commit the diff — a baseline that refreshes itself is a gate that
+ratchets nothing.
