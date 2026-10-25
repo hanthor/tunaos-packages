@@ -130,7 +130,8 @@ def prepare(repository, layout, selected, max_layer_bytes=None):
                 f'(default {DEFAULT_MAX_LAYER_BYTES}). The default is conservative policy, '
                 'not a measured registry limit: GHCR documents 10 GB per layer but serves a '
                 '19,508,954,174-byte layer for hummingbird-aarch64. Qualify the upload, then '
-                f'raise the limit with --max-layer-bytes or {MAX_LAYER_ENV}, or split the transport')
+                f'raise the limit with --max-layer-bytes or {MAX_LAYER_ENV}, '
+                'or split the transport')
         entries.append((path, info, snapshot))
     if not entries:
         raise ValueError('empty repository after size preflight')
