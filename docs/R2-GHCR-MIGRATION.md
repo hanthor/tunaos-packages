@@ -245,19 +245,35 @@ production pipelines.
 
 The image uses one uncompressed layer. This preserves transparent bytes and
 simple verification, not minimum download size.
-GHCR limits each layer to 10 GB and each upload to 10 minutes.
-See [the registry limits](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#troubleshooting).
-The publisher rejects a serialized layer above 9,000,000,000 bytes before it
-reads package contents or creates the layout. This includes tar headers,
-PAX headers and padding.
 
-A 32 GiB repository is **not supported** by this format.
-More scratch space does not remove the registry limit.
+GitHub documents a limit of 10 GB for each layer and 10 minutes for each upload.
+See [the registry limits](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#troubleshooting).
+That limit is a documented figure, not a measured one.
+The registry holds a layer of 19,508,954,174 bytes: the `hummingbird-aarch64` tag of `ghcr.io/tuna-os/tunaos-packages`.
+A `HEAD` request on its blob returned that length on 2026-10-25.
+
+By default the publisher applies a conservative policy ceiling of 9,000,000,000 bytes.
+It rejects a serialized layer above the ceiling before it reads package contents or creates the layout.
+The size includes tar headers, PAX headers and padding.
+The error text says that the ceiling is a policy and not a measured registry limit.
+
+A larger repository needs an explicit override.
+An example is the 32 GB `hummingbird` x86_64 family.
+Use `--max-layer-bytes N` on `prepare`, or set `ORAS_MAX_LAYER_BYTES=N`.
+
+N must be a positive integer of bytes.
+Any other value is an error, and so is an empty value.
+The flag wins over the variable.
+A layer above the override is still rejected.
+
+Nobody has qualified an upload above 19,508,954,174 bytes.
+Raise the ceiling only after a candidate run of that size succeeds.
+More scratch space does not change the ceiling.
 
 Before upload, the publisher also checks for
 `2 * repository_bytes + 1 GiB` of spare capacity.
 Archive overhead and concurrent users can still exhaust disk space.
-A layer below the size limit can still exceed the upload timeout on a slow link.
+A layer below the ceiling can still exceed the upload timeout on a slow link.
 The job timeout does not extend that registry timeout.
 
 Such failures stop before the channel advances. Production jobs have a
