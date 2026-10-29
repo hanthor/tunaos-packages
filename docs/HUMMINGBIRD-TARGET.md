@@ -370,8 +370,8 @@ Three changes, each small, together a closed loop:
 
    A rebuild can fix the first two classes, but only for a package from our prefix.
    `--print-rebuild-names` prints exactly those packages.
-2. **A served package the target cannot install no longer counts as built.**
-   `scripts/list-served-nvrs.py --except-names` withholds those names and every binary from their source build.
+2. **Do not skip served packages that the target cannot install.**
+   `scripts/list-served-nvrs.py --except-names` withholds these names and all binaries from the same source.
    The skip uses the first binary that `rpmspec -q` names for the spec.
    Thus, to withhold `libavutil-free` alone changes nothing if the index still serves `ffmpeg-free`.
    Both chain callers (`publish-build-chain-rpms.yml`, `chain-band.yml`) pass this option for hummingbird.

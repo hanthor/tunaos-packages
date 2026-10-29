@@ -237,8 +237,8 @@ It answers the question before a sync makes the wave public.
 The same walk names packages that the index serves but the target cannot install.
 The chain's served-NVR skip no longer counts these as built
 (`list-served-nvrs.py --except-names`).
-The chain can then rebuild an ABI leak in the correct root,
-instead of each wave skipping it (#629).
+The chain can then rebuild an ABI leak in the correct root.
+Waves no longer skip it (#629).
 
 ### What the gate does not cover
 
