@@ -40,6 +40,9 @@ Useful pipeline references:
   packaging
 - [Upstream parity register](docs/UPSTREAM_PARITY.md) — source and behavior
   differences that need explicit tracking
+- [Withdrawing a shadowed package](docs/WITHDRAWN-PACKAGES.md) — removing a
+  served build from a target's index without deleting it, when upstream
+  ships a newer one
 
 `AGENTS.md` contains additional GNOME 49/50 conventions. Its scope note lists
 the package families it does and does not cover.
