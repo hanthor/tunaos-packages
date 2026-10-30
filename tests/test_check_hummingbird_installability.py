@@ -100,6 +100,7 @@ def test_a_retained_served_package_is_audited_outside_desktop_closures():
         "libm.so.6(GLIBC_2.44)(64bit)": {
             "needed_by": ["pandoc-cli"],
             "needer_from": ["published"],
+            "class": "absent",
         },
     }
 
