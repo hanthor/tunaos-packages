@@ -13,6 +13,12 @@ name: Hummingbird installability
 # yet, so a hard gate today would be permanent red; the report in the job
 # summary is the product, and `--fail-on-unresolved` is there for the day a
 # package set first goes green and should stay so.
+# The enforcement that does NOT wait for that day lives on the publish path
+# (publish-build-chain-rpms.yml, #629): the same walk over the wave's own
+# freshly indexed tree, `--fail-on-regression` against
+# docs/hummingbird-installability-baseline.json. Refresh that baseline with
+# `--write-baseline` per arch, in its own commit, when the target's own
+# repository moves under it.
 # docs/HUMMINGBIRD-TARGET.md.
 
 on:

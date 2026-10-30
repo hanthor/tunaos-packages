@@ -100,6 +100,7 @@ def test_a_retained_served_package_is_audited_outside_desktop_closures():
         "libm.so.6(GLIBC_2.44)(64bit)": {
             "needed_by": ["pandoc-cli"],
             "needer_from": ["published"],
+            "class": "absent",
         },
     }
 
@@ -132,7 +133,8 @@ def test_the_report_renders_blockers_first():
     published = index({"desktop-shell": {"requires": ["libmissing.so.1()(64bit)"]}, "file-manager": {}})
     text = chk.render(chk.check(CATALOG, target, published, ["tiny"]))
     assert "| `tiny` |" in text and "❌" in text
-    assert "`libmissing.so.1()(64bit)` needed by `desktop-shell` (published)" in text
+    assert ("`libmissing.so.1()(64bit)` needed by `desktop-shell` "
+            "(published, absent)") in text
 
 
 def test_the_checker_runs_on_a_schedule_and_on_the_inputs_that_move_it():

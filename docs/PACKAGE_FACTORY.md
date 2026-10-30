@@ -226,6 +226,20 @@ buildroot manifests so a red run diffs against the last green one
 (`scripts/diff-buildroots.py`). `tests/test_target_tooling_parity.py`
 keeps this per-format equality a CI property rather than an intention.
 
+For Hummingbird, the publisher checks installability after it signs and
+indexes the wave, but before `rclone sync` makes that index public.
+`scripts/check-hummingbird-installability.py --fail-on-regression`
+walks the new tree. It refuses a wave that leaves a desktop worse off than
+`docs/hummingbird-installability-baseline.json` records.
+This is a ratchet, not a green gate: no Hummingbird desktop resolves yet.
+It answers the question before a sync makes the wave public.
+
+The same walk names packages that the index serves but the target cannot install.
+The chain's served-NVR skip no longer counts these as built
+(`list-served-nvrs.py --except-names`).
+The chain can then rebuild an ABI leak in the correct root.
+Waves no longer skip it (#629).
+
 ### What the gate does not cover
 
 Recorded here on purpose. A gate whose exceptions are implicit reads as full
