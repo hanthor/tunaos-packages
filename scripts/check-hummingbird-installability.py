@@ -2,15 +2,14 @@
 """Does what we publish for Hummingbird actually resolve on Hummingbird?
 
 The build chain answers "did it compile"; the gap engine answers "what is
-missing from the target"; nothing answered the question a consumer image
-asks: with ONLY the target's own repository and our published prefix
-enabled, does every root of every desktop resolve?  utah-packages gates its
-publish on exactly this (its `Validate Hummingbird-only consumer transaction`
-step runs dnf inside the bootc-os image).  This is the static half of that
-gate: it walks the runtime Requires: closure of each desktop's roots over the
-union of the target index and the published index, and reports every
-capability nothing provides -- no container, no network beyond two
-primary.xml downloads, so it runs in CI on every change and on a schedule.
+missing from the target"; nothing answered the question a consumer asks: with
+ONLY the target's own repository and our published prefix enabled, do every
+desktop root and every explicitly retained served package resolve?
+utah-packages gates its publish on the desktop question inside the bootc-os
+image. This is the static half of that gate plus the served-package repair
+set: it walks each declared runtime closure over the union of the target and
+published indexes. No container and no network beyond the declared indexes,
+so it runs in CI on every change and on a schedule.
 
 It is necessary, not sufficient: version constraints and conflicts are
 dnf's job.  An empty unresolved list means "dnf has a chance"; a non-empty
@@ -59,6 +58,8 @@ gap = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gap)
 
 
+RETAINED_SET = "retained"
+
 def merge_indexes(*indexes: dict) -> dict:
     """Union of parsed primary.xml indexes; the first wins on a name collision."""
     out = {"packages": {}, "provides": {}, "provides_evr": {}, "files": set()}
@@ -72,8 +73,10 @@ def merge_indexes(*indexes: dict) -> dict:
     return out
 
 
-def roots_of(catalog: dict, desktop: str) -> list[str]:
-    definition = catalog["desktops"][desktop]
+def roots_of(catalog: dict, package_set: str) -> list[str]:
+    if package_set == RETAINED_SET:
+        return list(dict.fromkeys(catalog.get("retained_packages") or []))
+    definition = catalog["desktops"][package_set]
     return list(dict.fromkeys(
         definition.get("required_packages", []) + definition.get("install_packages", [])
     ))
@@ -161,8 +164,8 @@ def rebuild_list(report: dict) -> dict:
 
 
 def check(catalog: dict, target_index: dict, published_index: dict,
-          desktops: list[str], consumed: list[dict] | None = None) -> dict:
-    """Per desktop: roots absent from all repos, closure size, unresolved caps.
+          package_sets: list[str], consumed: list[dict] | None = None) -> dict:
+    """Per package set: absent roots, closure size, and unresolved capabilities.
 
     `consumed` are the parsed indexes of repositories a consumer image enables
     next to the target and our prefix (utah-packages for GNOME). On a name
@@ -176,8 +179,8 @@ def check(catalog: dict, target_index: dict, published_index: dict,
     universe = merge_indexes(*consumed, published_index, target_index)
     families = soname_families(universe["provides"])
     report = {}
-    for desktop in desktops:
-        roots = roots_of(catalog, desktop)
+    for package_set in package_sets:
+        roots = roots_of(catalog, package_set)
         reachable, absent, unresolved = gap.closure(roots, universe, set())
         # Which repo would serve each unresolved capability's needer is the
         # actionable bit: a needer in OUR prefix means our package was linked
@@ -201,7 +204,7 @@ def check(catalog: dict, target_index: dict, published_index: dict,
                 # the two, because only one of them is a bigger build order.
                 "class": classify(cap, universe["provides"], families),
             }
-        report[desktop] = {
+        report[package_set] = {
             "roots": len(roots),
             "roots_absent": sorted(absent),
             "closure_packages": len(reachable),
@@ -216,25 +219,25 @@ def check(catalog: dict, target_index: dict, published_index: dict,
 
 
 def render(report: dict) -> str:
-    lines = ["| Desktop | Roots | Absent roots | Closure | Unresolved capabilities "
+    lines = ["| Package set | Roots | Absent roots | Closure | Unresolved capabilities "
              "| To rebuild | Resolvable |",
              "|---|---|---|---|---|---|---|"]
-    for desktop, r in report.items():
-        lines.append(f"| `{desktop}` | {r['roots']} | {len(r['roots_absent'])} | "
-                     f"{r['closure_packages']} | {len(r['unresolved'])} | "
-                     f"{len(r['leaks'])} | "
-                     f"{'✅' if r['resolvable'] else '❌'} |")
-    for desktop, r in report.items():
-        if r["roots_absent"] or r["unresolved"]:
+    for package_set, result in report.items():
+        lines.append(f"| `{package_set}` | {result['roots']} | {len(result['roots_absent'])} | "
+                     f"{result['closure_packages']} | {len(result['unresolved'])} | "
+                     f"{len(result['leaks'])} | "
+                     f"{'✅' if result['resolvable'] else '❌'} |")
+    for package_set, result in report.items():
+        if result["roots_absent"] or result["unresolved"]:
             lines.append("")
-            lines.append(f"**{desktop}** — first blockers:")
-            for name in r["roots_absent"][:10]:
+            lines.append(f"**{package_set}** — first blockers:")
+            for name in result["roots_absent"][:10]:
                 lines.append(f"- root `{name}`: in neither repository")
-            for cap, d in list(r["unresolved"].items())[:15]:
+            for cap, detail in list(result["unresolved"].items())[:15]:
                 lines.append(
                     f"- `{cap}` needed by "
-                    f"{', '.join(f'`{n}`' for n in d['needed_by'][:3])} "
-                    f"({'/'.join(d['needer_from'])}, {d['class']})")
+                    f"{', '.join(f'`{n}`' for n in detail['needed_by'][:3])} "
+                    f"({'/'.join(detail['needer_from'])}, {detail['class']})")
     rebuild = rebuild_list(report)
     if rebuild:
         lines.append("")
@@ -404,8 +407,10 @@ def main(argv: list[str] | None = None) -> int:
         c["baseurl"], args.cache, args.arch)[0]) for c in consumed_meta]
     for c in consumed_meta:
         c.pop("_have", None)
-    desktops = args.desktops or [d for d in catalog["desktops"] if d != "bluefin"]
-    report = check(catalog, target_index, published_index, desktops, consumed)
+    package_sets = args.desktops or [d for d in catalog["desktops"] if d != "bluefin"]
+    if catalog.get("retained_packages") and RETAINED_SET not in package_sets:
+        package_sets.append(RETAINED_SET)
+    report = check(catalog, target_index, published_index, package_sets, consumed)
     out = {
         "measured_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "arch": args.arch,

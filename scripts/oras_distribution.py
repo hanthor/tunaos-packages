@@ -18,6 +18,16 @@ import tarfile
 import tempfile
 
 VERSION = '1.3.4'
+# Default ceiling for the serialized layer, in decimal bytes. This is a
+# conservative POLICY, not a measured registry limit. GitHub documents 10 GB
+# per layer, yet ghcr.io/tuna-os/tunaos-packages serves a 19,508,954,174-byte
+# layer (tag hummingbird-aarch64, measured 2026-10-25). The default stays below
+# the documented figure so an unqualified upload fails before it starts. A
+# larger layer needs an explicit, validated override (--max-layer-bytes or
+# ORAS_MAX_LAYER_BYTES).
+DEFAULT_MAX_LAYER_BYTES = 9_000_000_000
+MAX_LAYER_ENV = 'ORAS_MAX_LAYER_BYTES'
+POSITIVE_INTEGER = re.compile(r'[1-9][0-9]*')
 MANIFEST = 'application/vnd.oci.image.manifest.v1+json'
 CONFIG = 'application/vnd.oci.image.config.v1+json'
 LAYER = 'application/vnd.oci.image.layer.v1.tar'
@@ -73,8 +83,20 @@ def read_blob(layout, descriptor, media):
     return data
 
 
-def prepare(repository, layout, selected):
+def layer_limit(value=None):
+    """Return the layer ceiling; reject anything but a positive integer."""
+    if value is None:
+        return DEFAULT_MAX_LAYER_BYTES
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    if isinstance(value, str) and POSITIVE_INTEGER.fullmatch(value):
+        return int(value)
+    raise ValueError(f'layer size limit must be a positive integer of bytes, got {value!r}')
+
+
+def prepare(repository, layout, selected, max_layer_bytes=None):
     """Make a single-layer scratch image; native metadata/signatures stay intact."""
+    limit = layer_limit(max_layer_bytes)
     repository = repository.resolve()
     if not repository.is_dir() or layout.exists():
         raise ValueError('repository must exist and layout must be new')
@@ -89,20 +111,56 @@ def prepare(repository, layout, selected):
                 raise ValueError('unsafe repository symlink')
         elif not path.is_file() and not path.is_dir():
             raise ValueError('special files are not repository content')
+    entries = []
+    tar_bytes = 0
+    for path in paths:
+        if not path.is_file():
+            continue
+        info = tarfile.TarInfo('repository/' + path.relative_to(repository).as_posix())
+        snapshot = path.stat()
+        info.size = snapshot.st_size
+        info.mode = 0o644
+        # Include extended PAX headers, file padding, end markers and record padding.
+        tar_bytes += len(info.tobuf(format=tarfile.PAX_FORMAT))
+        tar_bytes += ((info.size + 511) // 512) * 512
+        serialized = ((tar_bytes + 1024 + 10239) // 10240) * 10240
+        if serialized > limit:
+            raise ValueError(
+                f'repository needs a layer above the {limit}-byte layer size policy '
+                f'(default {DEFAULT_MAX_LAYER_BYTES}). The default is conservative policy, '
+                'not a measured registry limit: GHCR documents 10 GB per layer but serves a '
+                '19,508,954,174-byte layer for hummingbird-aarch64. Qualify the upload, then '
+                f'raise the limit with --max-layer-bytes or {MAX_LAYER_ENV}, '
+                'or split the transport')
+        entries.append((path, info, snapshot))
+    if not entries:
+        raise ValueError('empty repository after size preflight')
     layout.mkdir(parents=True)
     (layout / 'blobs' / 'sha256').mkdir(parents=True)
-    # Write exactly one tar copy, on the caller-selected layout filesystem.
-    # Large families exceed 30 GiB; a second temporary tar can exhaust runners.
+    # Write one tar copy only after the complete size preflight succeeds.
     layer_path = layout / 'layer.tmp'
     with tarfile.open(layer_path, mode='w', format=tarfile.PAX_FORMAT) as archive:
-        for path in paths:
-            if not path.is_file():
-                continue
-            info = tarfile.TarInfo('repository/' + path.relative_to(repository).as_posix())
-            info.size = path.stat().st_size
-            info.mode = 0o644
+        for path, info, snapshot in entries:
+            current = path.stat()
+            if (current.st_ino, current.st_dev, current.st_size, current.st_mtime_ns,
+                current.st_ctime_ns) != (snapshot.st_ino, snapshot.st_dev, snapshot.st_size,
+                                        snapshot.st_mtime_ns, snapshot.st_ctime_ns):
+                raise ValueError('repository changed after size preflight')
             with path.open('rb') as source:
+                opened = os.fstat(source.fileno())
+                if (opened.st_ino, opened.st_dev, opened.st_size, opened.st_mtime_ns,
+                    opened.st_ctime_ns) != (snapshot.st_ino, snapshot.st_dev, snapshot.st_size,
+                                           snapshot.st_mtime_ns, snapshot.st_ctime_ns):
+                    raise ValueError('repository changed after size preflight')
                 archive.addfile(info, source)
+                # atime can change on read, so compare only content-relevant fields.
+                after = os.fstat(source.fileno())
+                if (after.st_size != snapshot.st_size
+                        or after.st_mtime_ns != snapshot.st_mtime_ns
+                        or after.st_ctime_ns != snapshot.st_ctime_ns):
+                    raise ValueError('repository changed during archive creation')
+    if layer_path.stat().st_size != serialized or serialized > limit:
+        raise ValueError('serialized layer size violates publication preflight')
     with layer_path.open('rb') as source:
         layer_digest = 'sha256:' + hashlib.file_digest(source, 'sha256').hexdigest()
     layer = {'mediaType': LAYER, 'digest': layer_digest, 'size': layer_path.stat().st_size}
@@ -209,15 +267,27 @@ def main():
     parser.add_argument('--reference')
     parser.add_argument('--destination', type=pathlib.Path)
     parser.add_argument('--identity')
+    parser.add_argument('--max-layer-bytes',
+                        help=f'prepare only: layer size ceiling in bytes; default '
+                             f'{DEFAULT_MAX_LAYER_BYTES}, or ${MAX_LAYER_ENV} when set')
     args = parser.parse_args()
     selected = scope(args.format, args.target, args.architecture)
     if args.operation == 'prepare':
         if not args.repository or not args.layout:
             parser.error('prepare requires --repository and --layout')
-        print(prepare(args.repository, args.layout, selected))
+        override = args.max_layer_bytes
+        if override is None:
+            override = os.environ.get(MAX_LAYER_ENV)
+        try:
+            layer_limit(override)
+        except ValueError as error:
+            parser.error(str(error))
+        print(prepare(args.repository, args.layout, selected, override))
     else:
         if not args.reference or not args.destination or not args.identity:
             parser.error('pull requires --reference, --destination and --identity')
+        if args.max_layer_bytes is not None:
+            parser.error('--max-layer-bytes applies to prepare only')
         pull(args.reference, args.destination, selected, args.identity)
 
 

@@ -566,11 +566,24 @@ jobs:
       # that no gpgcheck=1 consumer of public.gpg could install; the first
       # factory publish replaces it. publish-rpm-wave.sh carries the rule and
       # its guard; publish-tideforge-rpms.yml deliberately does not pass this.
+      # Excludes manifests/withdrawn-packages.yaml's entries for this
+      # target from the regenerated repodata (#525): a served build older
+      # than upstream's otherwise shadows upstream's fix at this factory's
+      # dnf priority 5. Harmless for a target with no entries -- an empty
+      # file plans zero excludes -- so this runs unconditionally rather
+      # than naming hummingbird specifically.
+      - name: Plan withdrawn-package excludes
+        run: |
+          set -euo pipefail
+          pip install -q pyyaml
+          python3 scripts/plan-withdrawn-excludes.py \
+            --target '${{ matrix.target }}' --out /tmp/withdrawn-excludes.txt
       - name: Sign and index
         run: |
           set -euo pipefail
           bash scripts/publish-rpm-wave.sh \
-            --staged staged --repo repo --subdir build-chain --evict-foreign
+            --staged staged --repo repo --subdir build-chain --evict-foreign \
+            --exclude-file /tmp/withdrawn-excludes.txt
       # THE CONSUMER'S QUESTION, BEFORE THE BUCKET HEARS IT (#629).
       #
       # `publish-rpm-wave.sh` has just run createrepo_c over `repo/`, so the
