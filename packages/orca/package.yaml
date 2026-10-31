@@ -36,7 +36,7 @@ outputs:
       debian_tar: orca_50.3-0ubuntu0.1.debian.tar.xz
       patch:
         path: packages/orca/patches/0001-tuna-native-password-deltas.patch
-        sha256: becb5a84772504aa742860363517af2ddef6c4d7b7222641ac0f39d2d5f5f3e3
+        sha256: 8c9d226e66dd242fa6f25db00a941dd229ba97f0610d9f78d06fb05bd2a9db17
 files:
   common:
     - usr/bin/orca

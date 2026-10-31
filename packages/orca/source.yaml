@@ -13,7 +13,7 @@ files:
     sha256: 1cada256a356bb77b26221c2adda8f6867bc9f7cf543bb0cde6683fb4bf21422
 patches:
   - path: patches/0001-tuna-native-password-deltas.patch
-    sha256: becb5a84772504aa742860363517af2ddef6c4d7b7222641ac0f39d2d5f5f3e3
+    sha256: 8c9d226e66dd242fa6f25db00a941dd229ba97f0610d9f78d06fb05bd2a9db17
 policy: >-
   Preserve Ubuntu's complete source packaging, including unity-a11y.patch,
   Build-Depends, runtime relationships, install ownership and maintainer rules.
