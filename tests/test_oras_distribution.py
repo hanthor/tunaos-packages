@@ -279,6 +279,58 @@ def test_source_mutation_after_preflight_fails_closed(tmp_path, monkeypatch, new
     assert not (layout / 'index.json').exists()
 
 
+@pytest.mark.parametrize('phase', ['before_archive', 'during_archive'])
+def test_source_mutation_with_stable_timestamps_fails_closed(tmp_path, monkeypatch, phase):
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    package = repo / 'pkg.rpm'
+    package.write_bytes(b'x')
+    snapshot = package.stat()
+    original_stat = Path.stat
+    original_fstat = os.fstat
+
+    # Model a filesystem whose timestamps do not advance for this same-size write.
+    def stable_stat(path, *args, **kwargs):
+        current = original_stat(path, *args, **kwargs)
+        return snapshot if path == package else current
+
+    def stable_fstat(fd):
+        current = original_fstat(fd)
+        if (current.st_ino, current.st_dev) == (snapshot.st_ino, snapshot.st_dev):
+            return snapshot
+        return current
+
+    monkeypatch.setattr(Path, 'stat', stable_stat)
+    monkeypatch.setattr(os, 'fstat', stable_fstat)
+    if phase == 'before_archive':
+        original_open = d.tarfile.open
+
+        def mutate_open(*args, **kwargs):
+            if kwargs.get('mode') == 'w':
+                package.write_bytes(b'y')
+            return original_open(*args, **kwargs)
+
+        monkeypatch.setattr(d.tarfile, 'open', mutate_open)
+    else:
+        original_addfile = d.tarfile.TarFile.addfile
+
+        def mutate_addfile(archive, info, source=None):
+            package.write_bytes(b'y')
+            try:
+                return original_addfile(archive, info, source)
+            finally:
+                # Re-reading the source after archiving must not mask changed tar bytes.
+                package.write_bytes(b'x')
+
+        monkeypatch.setattr(d.tarfile.TarFile, 'addfile', mutate_addfile)
+
+    layout = tmp_path / 'layout'
+    with pytest.raises(ValueError, match='repository changed after content preflight'):
+        d.prepare(repo, layout, d.scope('rpm', 'el10', 'x86_64'))
+    assert not (layout / 'index.json').exists()
+    assert not (layout / 'oci-layout').exists()
+
+
 HUMMINGBIRD_LAYER = 19_508_954_174
 SELECTED = ('rpm', 'el10', 'x86_64')
 

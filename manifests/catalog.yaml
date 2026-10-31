@@ -9306,6 +9306,20 @@ packages:
     referenced_by:
       - build-order-hummingbird-desktops.yml
       - manifests/package-builds.yaml
+  - name: orca
+    family: tideforge
+    packaging:
+      deb:
+        tideforge: packages/orca
+    upstream:
+      version: '50.3'
+      source: https://archive.ubuntu.com/ubuntu/pool/main/o/orca/orca_50.3.orig.tar.xz
+      sha256: cc13521037519e06125ec6eb0236ffd52a6d6ff7ef538323f786fca840a3dbda
+    targets:
+      - ubuntu
+    membership: runtime
+    referenced_by:
+      - .github/workflows/package-factory.yml
   - name: osinfo-db
     family: hummingbird-desktops
     packaging:
