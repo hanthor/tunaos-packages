@@ -257,11 +257,11 @@ It rejects a serialized layer above the ceiling before it reads package contents
 The size includes tar headers, PAX headers and padding.
 The error text says that the ceiling is a policy and not a measured registry limit.
 
-After the size check, `prepare` records a streaming SHA-256 digest of each file.
-Before publishing an OCI index, it checks each archived payload against that
-content preflight. Inode, size and timestamp checks alone miss same-size writes
-within a filesystem timestamp tick; hashing the archived bytes also catches a
-source changed during archiving and restored before a later source read.
+After the size check, `prepare` computes a SHA-256 digest for each file in bounded chunks.
+It compares each archived payload with that digest before it publishes an OCI index.
+A file can keep its size and timestamps even when its bytes change.
+A source can return to its original bytes after the archive has read different bytes.
+The check uses the actual archive, so it catches both cases.
 Both digest passes use bounded reads and no second temporary archive.
 
 A larger repository needs an explicit override.
