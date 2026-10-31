@@ -257,6 +257,13 @@ It rejects a serialized layer above the ceiling before it reads package contents
 The size includes tar headers, PAX headers and padding.
 The error text says that the ceiling is a policy and not a measured registry limit.
 
+After the size check, `prepare` records a streaming SHA-256 digest of each file.
+Before publishing an OCI index, it checks each archived payload against that
+content preflight. Inode, size and timestamp checks alone miss same-size writes
+within a filesystem timestamp tick; hashing the archived bytes also catches a
+source changed during archiving and restored before a later source read.
+Both digest passes use bounded reads and no second temporary archive.
+
 A larger repository needs an explicit override.
 An example is the 32 GB `hummingbird` x86_64 family.
 Use `--max-layer-bytes N` on `prepare`, or set `ORAS_MAX_LAYER_BYTES=N`.
