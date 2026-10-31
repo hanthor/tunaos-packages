@@ -3,6 +3,21 @@
 Candidates are not published supply. Keep failed attempts and check each
 architecture against its native base before publication.
 
+## Pinned factory runner exits 126
+
+**Symptom:** A consumer checks out an immutable commit, then reports
+`env: 'scripts/run-package-factory-cell.sh': Permission denied`.
+
+**Cause:** Git tracks the runner as mode `100644` in commit
+`c0998b94bd7b4fbc67360c239e439de6debf539b` and its parent.
+Factory workflows use `bash` and do not need an executable file.
+Consumers that execute the script through its shebang need that mode.
+
+**Fix:** Track the runner as executable (`100755`).
+Consumers can execute it directly or use Bash.
+Pin a commit with this fix. Do not change source hashes or chmod downloaded sources.
+The Bats test executes the runner through `env`.
+
 ## Old partial RPMs in a new candidate
 
 **SYMPTOM:** The candidate initializer reports that its repository is not empty.
