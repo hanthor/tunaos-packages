@@ -135,6 +135,11 @@ def prepare(repository, layout, selected, max_layer_bytes=None):
         entries.append((path, info, snapshot))
     if not entries:
         raise ValueError('empty repository after size preflight')
+    # Stat timestamps can remain unchanged after a same-size write.
+    content_digests = {}
+    for path, info, _ in entries:
+        with path.open('rb') as source:
+            content_digests[info.name] = hashlib.file_digest(source, 'sha256').digest()
     layout.mkdir(parents=True)
     (layout / 'blobs' / 'sha256').mkdir(parents=True)
     # Write one tar copy only after the complete size preflight succeeds.
@@ -161,6 +166,12 @@ def prepare(repository, layout, selected, max_layer_bytes=None):
                     raise ValueError('repository changed during archive creation')
     if layer_path.stat().st_size != serialized or serialized > limit:
         raise ValueError('serialized layer size violates publication preflight')
+    # Check the archived bytes, not a second read of a possibly restored source.
+    with tarfile.open(layer_path, mode='r:') as archive:
+        for member in archive:
+            with archive.extractfile(member) as source:
+                if hashlib.file_digest(source, 'sha256').digest() != content_digests[member.name]:
+                    raise ValueError('repository changed after content preflight')
     with layer_path.open('rb') as source:
         layer_digest = 'sha256:' + hashlib.file_digest(source, 'sha256').hexdigest()
     layer = {'mediaType': LAYER, 'digest': layer_digest, 'size': layer_path.stat().st_size}
